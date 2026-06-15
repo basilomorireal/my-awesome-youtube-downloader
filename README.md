@@ -12,6 +12,7 @@ it can download single videos, multiple videos at once, or entire playlists. it 
 
 ## safety warning
 if you dont trust the release file that i uploaded, you can always build the program by yourself. everything is open sourced.
+
 i will not be including any contributors to this project so if you see a potential clone of this with my name and someone elses on the contributor list, that is not legit.
 
 ## features
@@ -83,8 +84,7 @@ My Awesome YouTube Downloader/
 
 - video mode downloads video only (no audio)  
 - audio mode converts to mp3  
-- audio + video mode downloads and merges both streams  
-- optional gifs and music are not required  
+- audio + video mode downloads and merges both streams
 
 ## disclaimer
 
