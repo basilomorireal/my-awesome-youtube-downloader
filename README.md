@@ -43,8 +43,8 @@ i will not be including any contributors to this project so if you see a potenti
 - tkinter (comes with python)
 
 im unable to upload both yt-dlp and ffmpeg for safety reasons (plus ffmpeg is huge so just download it by yourself and put it in the bin folder)
-yt-dlp: https://github.com/yt-dlp/yt-dlp
-ffmpeg: https://ffmpeg.org/download.html#build-windows (download the exe files and not the source code)
+- yt-dlp: https://github.com/yt-dlp/yt-dlp
+- ffmpeg: https://ffmpeg.org/download.html#build-windows (download the exe files and not the source code)
 
 ## building exe
 
