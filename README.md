@@ -1,4 +1,8 @@
-# My Awesome YouTube Downloader
+<p align="center">
+  <img src="assets/images/title.gif" alt="title gif">
+</p>
+
+<h1 align="center">My Awesome YouTube Downloader</h1>
 
 a simple youtube downloader made with python, tkinter, yt-dlp, and ffmpeg.
 
