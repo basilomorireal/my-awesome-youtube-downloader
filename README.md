@@ -28,10 +28,14 @@ it can download single videos, multiple videos at once, or entire playlists. it 
 ## requirements
 
 - python 3.8+
-- yt-dlp (included)
-- ffmpeg (included)
+- yt-dlp
+- ffmpeg
 - pillow (included. build.bat downloads it for you)
 - tkinter (comes with python)
+
+im unable to upload both yt-dlp and ffmpeg for safety reasons (plus ffmpeg is huge so just download it by yourself and put it in the bin folder)
+yt-dlp: https://github.com/yt-dlp/yt-dlp
+ffmpeg: https://ffmpeg.org/download.html#build-windows (download the exe files and not the source code)
 
 ## building exe
 
