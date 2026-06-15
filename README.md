@@ -10,6 +10,10 @@ i made this because dad doesnt really know how to use yt-dlp so i made it very s
 
 it can download single videos, multiple videos at once, or entire playlists. it also has light/dark mode, animated buttons, optional background music, and a cat because im fucking awesome.
 
+## safety warning
+if you dont trust the release file that i uploaded, you can always build the program by yourself. everything is open sourced.
+i will not be including any contributors to this project so if you see a potential clone of this with my name and someone elses on the contributor list, that is not legit.
+
 ## features
 
 - download single videos
