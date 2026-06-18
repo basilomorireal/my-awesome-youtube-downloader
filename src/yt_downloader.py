@@ -77,9 +77,9 @@ THEMES = {
 }
 
 QUALITY_OPTIONS = {
+    "Video + Audio": ["Best", "1080p", "720p", "480p", "360p", "240p"],
     "Video":         ["Best", "1080p", "720p", "480p", "360p", "240p"],
     "Audio":         ["Best (auto)"],
-    "Audio + Video": ["Best", "1080p", "720p", "480p", "360p", "240p"],
 }
 
 # ---------------------------------------------------------------------------
@@ -264,6 +264,13 @@ class App(tk.Tk):
             command=self._toggle_theme)
         self.btn_toggle.pack(side="right", padx=(6, 0))
 
+        self._muted = False
+        self.btn_mute = tk.Button(
+            header_inner, text="🔊", font=("Segoe UI Emoji", 14),
+            relief="flat", cursor="hand2", bd=0,
+            command=self._toggle_mute)
+        self.btn_mute.pack(side="right", padx=(0, 2))
+
         self.lbl_gif = tk.Label(header_inner, bd=0, highlightthickness=0)
         if self._gif_frames:
             self.lbl_gif.configure(image=self._gif_frames[0])
@@ -288,29 +295,33 @@ class App(tk.Tk):
 
     def _make_gif_btn(self, parent, key, gif_file, fallback_text, command, height=48):
         """
-        Uses a plain tk.Label (no Button) for the GIF so there is zero
-        hover/active flash. Click is bound manually. Falls back to a styled
-        tk.Button when no GIF file is present.
+        Uses a plain tk.Label (no Button) for the GIF — zero hover flash.
+        When disabled, a semi-transparent grey overlay label covers the GIF.
+        Falls back to a styled tk.Button when no GIF is present.
         """
         loaded = self._load_btn_gif(key, gif_file, target_h=height)
 
-        # Fixed-size wrapper — prevents any resize on interaction
         wrapper = tk.Frame(parent, height=height + 10, bd=0, highlightthickness=0)
         wrapper.pack_propagate(False)
 
-        _bg = "#FFFFFF"  # will be overridden by _apply_theme
+        _bg = "#FFFFFF"
 
         if loaded:
             d = self._btn_gif[key]
-            # Label-only: no Button involved, so no activebackground flash
             lbl = tk.Label(wrapper, image=d["frames"][0],
                            bd=0, highlightthickness=0, cursor="hand2", bg=_bg)
-            lbl.pack(fill="both", expand=True)
-            lbl.bind("<Button-1>", lambda e: command())
+            lbl.place(relx=0, rely=0, relwidth=1, relheight=1)
+            lbl.bind("<Button-1>", lambda e, k=key: self._gif_btn_click(k, command))
             d["label"] = lbl
             d["wrapper"] = wrapper
+            d["command"] = command
+            d["enabled"] = True
+            # Overlay label for disabled state (hidden by default)
+            overlay = tk.Label(wrapper, bg="#888888", bd=0, highlightthickness=0)
+            overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            overlay.place_forget()
+            d["overlay"] = overlay
             self.after(100, self._start_btn_gif, key)
-            # Return the label masquerading as the "button" for state calls
             btn = lbl
         else:
             btn = tk.Button(wrapper, text=fallback_text, relief="flat", cursor="hand2",
@@ -322,6 +333,33 @@ class App(tk.Tk):
 
         self._btn_gif.setdefault(key, {})["wrapper"] = wrapper
         return btn
+
+    def _gif_btn_click(self, key, command):
+        d = self._btn_gif.get(key, {})
+        if d.get("enabled", True):
+            command()
+
+    def _set_gif_btn_state(self, key, enabled):
+        d = self._btn_gif.get(key)
+        if not d:
+            return
+        d["enabled"] = enabled
+        overlay = d.get("overlay")
+        lbl = d.get("label")
+        if overlay:
+            if enabled:
+                overlay.place_forget()
+                if lbl: lbl.configure(cursor="hand2")
+            else:
+                overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+                if lbl: lbl.configure(cursor="")
+        else:
+            # fallback text button
+            wrapper = d.get("wrapper")
+            if wrapper:
+                for w in wrapper.winfo_children():
+                    if isinstance(w, tk.Button):
+                        w.configure(state="normal" if enabled else "disabled")
 
     # ── Single tab ────────────────────────────────────────────────────
 
@@ -348,7 +386,7 @@ class App(tk.Tk):
         right_col = tk.Frame(fq_frame); right_col.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(left_col, "Format")
-        self.format_var = tk.StringVar(value="Video")
+        self.format_var = tk.StringVar(value="Video + Audio")
         self.fmt_box = ttk.Combobox(left_col, textvariable=self.format_var,
                                     state="readonly", font=("Segoe UI", 9),
                                     values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -359,7 +397,7 @@ class App(tk.Tk):
         self.quality_var = tk.StringVar(value="Best")
         self.qual_box = ttk.Combobox(right_col, textvariable=self.quality_var,
                                      state="readonly", font=("Segoe UI", 9),
-                                     values=QUALITY_OPTIONS["Video"], width=16)
+                                     values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.qual_box.pack(fill="x", pady=(0, 2))
 
         self._lbl(p, "Save to folder")
@@ -419,7 +457,7 @@ class App(tk.Tk):
         rc2 = tk.Frame(fq2); rc2.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(lc2, "Format")
-        self.bulk_format_var = tk.StringVar(value="Video")
+        self.bulk_format_var = tk.StringVar(value="Video + Audio")
         self.bulk_fmt_box = ttk.Combobox(lc2, textvariable=self.bulk_format_var,
                                          state="readonly", font=("Segoe UI", 9),
                                          values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -430,7 +468,7 @@ class App(tk.Tk):
         self.bulk_quality_var = tk.StringVar(value="Best")
         self.bulk_qual_box = ttk.Combobox(rc2, textvariable=self.bulk_quality_var,
                                           state="readonly", font=("Segoe UI", 9),
-                                          values=QUALITY_OPTIONS["Video"], width=16)
+                                          values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.bulk_qual_box.pack(fill="x", pady=(0, 2))
 
         folder_row2 = tk.Frame(p); folder_row2.pack(fill="x", padx=16, pady=(0, 4))
@@ -505,7 +543,7 @@ class App(tk.Tk):
         rc = tk.Frame(fq); rc.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(lc, "Format")
-        self.pl_format_var = tk.StringVar(value="Video")
+        self.pl_format_var = tk.StringVar(value="Video + Audio")
         self.pl_fmt_box = ttk.Combobox(lc, textvariable=self.pl_format_var,
                                         state="readonly", font=("Segoe UI", 9),
                                         values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -516,7 +554,7 @@ class App(tk.Tk):
         self.pl_quality_var = tk.StringVar(value="Best")
         self.pl_qual_box = ttk.Combobox(rc, textvariable=self.pl_quality_var,
                                          state="readonly", font=("Segoe UI", 9),
-                                         values=QUALITY_OPTIONS["Video"], width=16)
+                                         values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.pl_qual_box.pack(fill="x", pady=(0, 2))
 
         folder_row = tk.Frame(p); folder_row.pack(fill="x", padx=16, pady=(0, 4))
@@ -537,7 +575,7 @@ class App(tk.Tk):
         self.pl_dl_btn = self._make_gif_btn(p, "playlist", "assets/images/download3.gif",
                                             "⬇  Download Playlist", self._pl_start)
         self._btn_gif["playlist"]["wrapper"].pack(fill="x", padx=16, pady=(8, 4))
-        #self.pl_dl_btn.configure(state="disabled")
+        #self._set_gif_btn_state("playlist", False)
 
         self.pl_progress = ttk.Progressbar(p, mode="determinate")
         self.pl_progress.pack(fill="x", padx=16, pady=(0, 4))
@@ -596,6 +634,20 @@ class App(tk.Tk):
     # Theme
     # ------------------------------------------------------------------
 
+    def _toggle_mute(self):
+        self._muted = not self._muted
+        self.btn_mute.configure(text="🔇" if self._muted else "🔊")
+        if self._muted:
+            if self._music_proc:
+                try:
+                    self._music_proc.terminate()
+                    self._music_proc = None
+                except Exception:
+                    pass
+        else:
+            self._start_music()
+        self._apply_theme()  # recolor btn
+
     def _toggle_theme(self):
         self._theme_name = "dark" if self._theme_name == "light" else "light"
         self._apply_theme()
@@ -614,6 +666,9 @@ class App(tk.Tk):
                     if isinstance(ww, (tk.Label, tk.Frame)):
                         ww.configure(bg=t["header_bg"])
 
+        self.btn_mute.configure(
+            bg=t["header_bg"], fg=t["fg2"],
+            activebackground=t["header_bg"], activeforeground=t["fg"])
         self.btn_toggle.configure(
             bg=t["header_bg"], fg=t["fg"],
             activebackground=t["header_bg"], activeforeground=t["fg"],
@@ -851,7 +906,7 @@ class App(tk.Tk):
         except FileNotFoundError as e:
             messagebox.showerror("Error", str(e)); return
 
-        self.dl_btn.configure(state="disabled")
+        self._set_gif_btn_state("single", False)
         self.progress.start(10)
         self._set_status("Starting download…")
         self._log("$ " + " ".join(cmd))
@@ -877,7 +932,7 @@ class App(tk.Tk):
 
     def _on_done(self, success, msg):
         self.progress.stop()
-        self.dl_btn.configure(state="normal")
+        self._set_gif_btn_state("single", True)
         self._set_status(msg); self._log(msg)
         if success: messagebox.showinfo("Done!", msg + f"\n\nSaved to: {self.dir_var.get()}")
         else:       messagebox.showerror("Failed", msg)
@@ -899,7 +954,7 @@ class App(tk.Tk):
         self.bulk_listbox.delete(0,"end")
         for u in urls: self.bulk_listbox.insert("end", f"⏳  {u}")
         self.bulk_progress.configure(maximum=len(urls), value=0)
-        self.bulk_dl_btn.configure(state="disabled")
+        self._set_gif_btn_state("bulk", False)
         self._bulk_next()
 
     def _bulk_next(self):
@@ -938,7 +993,7 @@ class App(tk.Tk):
 
     def _bulk_done_all(self):
         self._bulk_running = False
-        self.bulk_dl_btn.configure(state="normal")
+        self._set_gif_btn_state("bulk", True)
         total = len(self._bulk_queue)
         ok = sum(1 for i in range(self.bulk_listbox.size())
                  if self.bulk_listbox.get(i).startswith("✅"))
@@ -959,7 +1014,7 @@ class App(tk.Tk):
             messagebox.showwarning("No URL","Please paste a playlist URL first."); return
         if self._pl_running: return
         self.pl_btn_fetch.configure(state="disabled", text="Fetching…")
-        #self.pl_dl_btn.configure(state="disabled")
+        #self._set_gif_btn_state("playlist", False)
         self.pl_listbox.delete(0,"end")
         self.pl_status_var.set("Fetching playlist info…")
         self._pl_queue = []
@@ -989,14 +1044,14 @@ class App(tk.Tk):
         self.pl_listbox.delete(0,"end")
         for u in urls: self.pl_listbox.insert("end", f"⏳  {u}")
         self.pl_progress.configure(maximum=len(urls), value=0)
-        self.pl_dl_btn.configure(state="normal")
+        self._set_gif_btn_state("playlist", True)
 
     def _pl_start(self):
         if self._pl_running or not self._pl_queue: return
         out_dir = self.pl_dir_var.get().strip() or self._download_dir
         os.makedirs(out_dir, exist_ok=True)
         self._pl_out_dir = out_dir; self._pl_index = 0; self._pl_running = True
-        #self.pl_dl_btn.configure(state="disabled")
+        #self._set_gif_btn_state("playlist", False)
         self.pl_btn_fetch.configure(state="disabled")
         self._pl_next()
 
@@ -1033,7 +1088,7 @@ class App(tk.Tk):
 
     def _pl_done_all(self):
         self._pl_running = False
-        self.pl_dl_btn.configure(state="normal")
+        self._set_gif_btn_state("playlist", True)
         self.pl_btn_fetch.configure(state="normal", text="🔍 Fetch")
         total = len(self._pl_queue)
         ok = sum(1 for i in range(self.pl_listbox.size())
