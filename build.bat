@@ -12,7 +12,7 @@ if errorlevel 1 (
 )
 
 echo [1/3] Installing dependencies...
-python -m pip install pyinstaller pillow --quiet
+python -m pip install pyinstaller pillow pycaw comtypes --quiet
 
 echo [2/3] Converting icon...
 python -c "from PIL import Image; img=Image.open('assets\icons\icon.png').convert('RGBA'); img.save('assets\icons\icon.ico',format='ICO',sizes=[(256,256),(128,128),(64,64),(32,32),(16,16)])" 2>nul
