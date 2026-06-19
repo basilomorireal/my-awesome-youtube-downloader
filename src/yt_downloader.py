@@ -3,6 +3,14 @@ from tkinter import ttk, filedialog, messagebox
 from PIL import Image, ImageTk
 import subprocess
 import threading
+# Windows audio session control for true mute (no music restart)
+try:
+    from pycaw.pycaw import AudioUtilities, ISimpleAudioVolume
+    PYCAW_OK = True
+except Exception:
+    PYCAW_OK = False
+
+PYGAME_OK = False  # not used
 import os
 import sys
 import shutil
@@ -82,6 +90,12 @@ QUALITY_OPTIONS = {
     "Audio":         ["Best (auto)"],
 }
 
+# File format options
+VIDEO_FORMATS_BASIC    = ["mp4", "mkv", "webm", "avi"]
+VIDEO_FORMATS_ADVANCED = ["mp4", "mkv", "webm", "avi", "mov", "flv", "ts", "m4v", "3gp"]
+AUDIO_FORMATS_BASIC    = ["mp3", "aac", "m4a", "opus"]
+AUDIO_FORMATS_ADVANCED = ["mp3", "aac", "m4a", "opus", "flac", "wav", "ogg", "vorbis", "alac"]
+
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
@@ -116,6 +130,7 @@ class App(tk.Tk):
 
         # music state
         self._music_proc = None
+        self._muted = False
 
         # icon
         icon_png = resource_path("assets/icons/icon.png")
@@ -149,17 +164,11 @@ class App(tk.Tk):
         mp3 = resource_path("assets/audio/theme.mp3")
         if not os.path.isfile(mp3):
             return
-        # Use ffplay (bundled with ffmpeg) or vlc if available, loop forever
         player = shutil.which("ffplay") or resource_path("bin/ffplay.exe")
-        if os.path.isfile(str(player)) or shutil.which("ffplay"):
-            cmd = [player, "-nodisp", "-autoexit", "-loop", "0", mp3]
-        else:
-            vlc = shutil.which("vlc")
-            if vlc:
-                cmd = [vlc, "--intf", "dummy", "--repeat", mp3]
-            else:
-                return   # no player found
-
+        if not (os.path.isfile(str(player)) or shutil.which("ffplay")):
+            return
+        # Always start at full volume — mute is handled via pycaw session volume
+        cmd = [player, "-nodisp", "-autoexit", "-loop", "0", "-volume", "100", mp3]
         try:
             self._music_proc = subprocess.Popen(
                 cmd,
@@ -167,7 +176,26 @@ class App(tk.Tk):
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
             )
-            # restart when it ends (loop fallback for players that don't support -loop)
+            # Apply mute immediately if already muted when music restarts
+            if self._muted:
+                self.after(300, self._apply_pycaw_mute, True)
+        except Exception:
+            pass
+
+    def _apply_pycaw_mute(self, mute: bool):
+        """Mute/unmute ffplay's audio session via Windows API — no restart."""
+        if not PYCAW_OK or not self._music_proc:
+            return
+        try:
+            ffplay_pid = self._music_proc.pid
+            for session in AudioUtilities.GetAllSessions():
+                if session.Process and session.Process.pid == ffplay_pid:
+                    vol = session._ctl.QueryInterface(ISimpleAudioVolume)
+                    vol.SetMute(1 if mute else 0, None)
+                    return
+            # Session not registered yet — retry
+            if not self._closing:
+                self.after(200, self._apply_pycaw_mute, mute)
         except Exception:
             pass
 
@@ -246,6 +274,41 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
     # UI build
     # ------------------------------------------------------------------
+
+    def _make_filefmt_row(self, parent, adv_var, fmt_var, qual_var):
+        """Creates an Advanced Options checkbox + file-format dropdown row.
+        Returns (adv_check, fmt_box) so caller can store refs."""
+        # Advanced checkbox
+        adv_frame = tk.Frame(parent)
+        adv_frame.pack(fill="x", padx=16, pady=(4, 0))
+        adv_chk = tk.Checkbutton(adv_frame, text="Advanced options",
+                                  variable=adv_var, font=("Segoe UI", 8),
+                                  cursor="hand2", bd=0, highlightthickness=0)
+        adv_chk.pack(side="left")
+
+        # File format row
+        ff_frame = tk.Frame(parent)
+        ff_frame.pack(fill="x", padx=16, pady=(2, 4))
+        self._inline_lbl(ff_frame, "File Format")
+        ff_box = ttk.Combobox(ff_frame, textvariable=fmt_var,
+                               state="readonly", font=("Segoe UI", 9), width=12)
+        ff_box.pack(side="left", pady=(0, 2))
+
+        def _refresh_ff(*_):
+            mode = qual_var.get()   # "Video + Audio", "Video", "Audio"
+            adv  = adv_var.get()
+            if mode == "Audio":
+                opts = AUDIO_FORMATS_ADVANCED if adv else AUDIO_FORMATS_BASIC
+            else:
+                opts = VIDEO_FORMATS_ADVANCED if adv else VIDEO_FORMATS_BASIC
+            ff_box["values"] = opts
+            if fmt_var.get() not in opts:
+                fmt_var.set(opts[0])
+
+        adv_var.trace_add("write", _refresh_ff)
+        qual_var.trace_add("write", _refresh_ff)
+        _refresh_ff()
+        return adv_chk, ff_box
 
     def _build_ui(self):
         # Header
@@ -346,13 +409,18 @@ class App(tk.Tk):
         d["enabled"] = enabled
         overlay = d.get("overlay")
         lbl = d.get("label")
-        if overlay:
+        if overlay and lbl:
             if enabled:
+                # Hide overlay, bring GIF label back to front
                 overlay.place_forget()
-                if lbl: lbl.configure(cursor="hand2")
+                lbl.place(relx=0, rely=0, relwidth=1, relheight=1)
+                lbl.lift()
+                lbl.configure(cursor="hand2")
             else:
+                # Show grey overlay on top of GIF label
                 overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-                if lbl: lbl.configure(cursor="")
+                overlay.lift()
+                lbl.configure(cursor="")
         else:
             # fallback text button
             wrapper = d.get("wrapper")
@@ -386,7 +454,9 @@ class App(tk.Tk):
         right_col = tk.Frame(fq_frame); right_col.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(left_col, "Format")
-        self.format_var = tk.StringVar(value="Video + Audio")
+        self.format_var    = tk.StringVar(value="Video + Audio")
+        self.adv_var       = tk.IntVar(value=0)
+        self.filefmt_var   = tk.StringVar(value="mp4")
         self.fmt_box = ttk.Combobox(left_col, textvariable=self.format_var,
                                     state="readonly", font=("Segoe UI", 9),
                                     values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -399,6 +469,7 @@ class App(tk.Tk):
                                      state="readonly", font=("Segoe UI", 9),
                                      values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.qual_box.pack(fill="x", pady=(0, 2))
+        self._adv_chk, self._ff_box = self._make_filefmt_row(p, self.adv_var, self.filefmt_var, self.format_var)
 
         self._lbl(p, "Save to folder")
         folder_row = tk.Frame(p); folder_row.pack(fill="x", padx=16, pady=(0, 4))
@@ -457,7 +528,9 @@ class App(tk.Tk):
         rc2 = tk.Frame(fq2); rc2.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(lc2, "Format")
-        self.bulk_format_var = tk.StringVar(value="Video + Audio")
+        self.bulk_format_var  = tk.StringVar(value="Video + Audio")
+        self.bulk_adv_var     = tk.IntVar(value=0)
+        self.bulk_filefmt_var = tk.StringVar(value="mp4")
         self.bulk_fmt_box = ttk.Combobox(lc2, textvariable=self.bulk_format_var,
                                          state="readonly", font=("Segoe UI", 9),
                                          values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -470,6 +543,7 @@ class App(tk.Tk):
                                           state="readonly", font=("Segoe UI", 9),
                                           values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.bulk_qual_box.pack(fill="x", pady=(0, 2))
+        self._bulk_adv_chk, self._bulk_ff_box = self._make_filefmt_row(p, self.bulk_adv_var, self.bulk_filefmt_var, self.bulk_format_var)
 
         folder_row2 = tk.Frame(p); folder_row2.pack(fill="x", padx=16, pady=(0, 4))
         self.bulk_dir_var = tk.StringVar(value=self._download_dir)
@@ -543,7 +617,9 @@ class App(tk.Tk):
         rc = tk.Frame(fq); rc.pack(side="left", fill="x", expand=True)
 
         self._inline_lbl(lc, "Format")
-        self.pl_format_var = tk.StringVar(value="Video + Audio")
+        self.pl_format_var  = tk.StringVar(value="Video + Audio")
+        self.pl_adv_var     = tk.IntVar(value=0)
+        self.pl_filefmt_var = tk.StringVar(value="mp4")
         self.pl_fmt_box = ttk.Combobox(lc, textvariable=self.pl_format_var,
                                         state="readonly", font=("Segoe UI", 9),
                                         values=list(QUALITY_OPTIONS.keys()), width=16)
@@ -556,6 +632,7 @@ class App(tk.Tk):
                                          state="readonly", font=("Segoe UI", 9),
                                          values=QUALITY_OPTIONS["Video + Audio"], width=16)
         self.pl_qual_box.pack(fill="x", pady=(0, 2))
+        self._pl_adv_chk, self._pl_ff_box = self._make_filefmt_row(p, self.pl_adv_var, self.pl_filefmt_var, self.pl_format_var)
 
         folder_row = tk.Frame(p); folder_row.pack(fill="x", padx=16, pady=(0, 4))
         self.pl_dir_var = tk.StringVar(value=self._download_dir)
@@ -637,16 +714,19 @@ class App(tk.Tk):
     def _toggle_mute(self):
         self._muted = not self._muted
         self.btn_mute.configure(text="🔇" if self._muted else "🔊")
-        if self._muted:
+        if PYCAW_OK:
+            # True mute via Windows audio session API — music keeps playing
+            self._apply_pycaw_mute(self._muted)
+        else:
+            # Fallback: restart ffplay (no way around it without pycaw)
             if self._music_proc:
                 try:
                     self._music_proc.terminate()
                     self._music_proc = None
                 except Exception:
                     pass
-        else:
             self._start_music()
-        self._apply_theme()  # recolor btn
+        self._apply_theme()
 
     def _toggle_theme(self):
         self._theme_name = "dark" if self._theme_name == "light" else "light"
@@ -731,6 +811,32 @@ class App(tk.Tk):
                                   selectforeground=t["list_sel_fg"])
         if hasattr(self, "pl_lbl_credit"):
             self.pl_lbl_credit.configure(bg=t["card"], fg=t["credit_fg"])
+
+        # Advanced checkboxes + file format comboboxes
+        for chk in (getattr(self,"_adv_chk",None),
+                    getattr(self,"_bulk_adv_chk",None),
+                    getattr(self,"_pl_adv_chk",None)):
+            if chk:
+                try:
+                    chk.configure(bg=t["card"], fg=t["fg2"],
+                                  selectcolor=t["card"],
+                                  activebackground=t["card"],
+                                  activeforeground=t["fg"])
+                except Exception: pass
+        for ff in (getattr(self,"_ff_box",None),
+                   getattr(self,"_bulk_ff_box",None),
+                   getattr(self,"_pl_ff_box",None)):
+            if ff:
+                try:
+                    ff.configure(foreground=t["fg"])
+                except Exception: pass
+        # Also recolor their parent frames
+        for attr in ("_adv_chk","_bulk_adv_chk","_pl_adv_chk",
+                     "_ff_box","_bulk_ff_box","_pl_ff_box"):
+            w = getattr(self, attr, None)
+            if w:
+                try: w.master.configure(bg=t["card"])
+                except Exception: pass
 
         # GIF buttons: sync bg to card so no colour flashes on hover
         btn_names = {"single": "dl_btn", "bulk": "bulk_dl_btn", "playlist": "pl_dl_btn"}
@@ -849,44 +955,44 @@ class App(tk.Tk):
 
     def _on_close(self):
         self._closing = True
-
         try:
             if self._music_proc:
                 self._music_proc.terminate()
-                self._music_proc.kill()   # <-- important
+                self._music_proc.kill()
                 self._music_proc = None
         except Exception:
             pass
-
         self.destroy()
 
     # ------------------------------------------------------------------
     # Download command builder
     # ------------------------------------------------------------------
 
-    def _build_command(self, url, out_dir, fmt=None, quality=None):
+    def _build_command(self, url, out_dir, fmt=None, quality=None, filefmt=None):
         ytdlp = find_ytdlp()
         if not ytdlp:
             raise FileNotFoundError("yt-dlp executable not found.")
         fmt     = fmt     or self.format_var.get()
         quality = quality or self.quality_var.get()
+        filefmt = filefmt or self.filefmt_var.get() or "mp4"
         cmd = [ytdlp, "--newline", "-o",
                os.path.join(out_dir, "%(title)s.%(ext)s")]
         if fmt == "Audio":
-            cmd += ["-x", "--audio-format", "mp3", "--audio-quality", "0"]
+            cmd += ["-x", "--audio-format", filefmt, "--audio-quality", "0"]
         elif fmt == "Video":
             if quality == "Best":
-                cmd += ["-f", "bestvideo"]
+                cmd += ["-f", f"bestvideo[ext={filefmt}]/bestvideo"]
             else:
                 h = quality.replace("p","")
-                cmd += ["-f", f"bestvideo[height<={h}]"]
-        else:
+                cmd += ["-f", f"bestvideo[height<={h}][ext={filefmt}]/bestvideo[height<={h}]"]
+        else:  # Video + Audio
             if quality == "Best":
-                cmd += ["-f", "bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
+                cmd += ["-f", "bestvideo+bestaudio/best",
+                        "--merge-output-format", filefmt]
             else:
                 h = quality.replace("p","")
                 cmd += ["-f", f"bestvideo[height<={h}]+bestaudio/best[height<={h}]",
-                        "--merge-output-format", "mp4"]
+                        "--merge-output-format", filefmt]
         cmd.append(url)
         return cmd
 
@@ -964,7 +1070,7 @@ class App(tk.Tk):
         self._bulk_update_row(self._bulk_index, f"⬇  {url}")
         self.bulk_listbox.see(self._bulk_index)
         self.bulk_status_var.set(f"Downloading {self._bulk_index+1}/{len(self._bulk_queue)} …")
-        fmt = self.bulk_format_var.get(); quality = self.bulk_quality_var.get()
+        fmt = self.bulk_format_var.get(); quality = self.bulk_quality_var.get(); filefmt = self.bulk_filefmt_var.get()
         try:
             cmd = self._build_command(url, self._bulk_out_dir, fmt, quality)
         except FileNotFoundError as e:
@@ -1062,7 +1168,7 @@ class App(tk.Tk):
         self._pl_update_row(self._pl_index, f"⬇  {url}")
         self.pl_listbox.see(self._pl_index)
         self.pl_status_var.set(f"Downloading {self._pl_index+1}/{len(self._pl_queue)} …")
-        fmt = self.pl_format_var.get(); quality = self.pl_quality_var.get()
+        fmt = self.pl_format_var.get(); quality = self.pl_quality_var.get(); filefmt = self.pl_filefmt_var.get()
         try:
             cmd = self._build_command(url, self._pl_out_dir, fmt, quality)
         except FileNotFoundError as e:
