@@ -23,6 +23,7 @@ i will not be including any contributors to this project so if you see a potenti
 - video-only downloads
 - audio-only (mp3) downloads
 - audio + video downloads (merged)
+- multiple file formats
 - selectable quality options
 - custom download folder
 - light / dark mode
@@ -31,14 +32,16 @@ i will not be including any contributors to this project so if you see a potenti
 
 ## planned features
 
-- multiple file types for audio and video (ogg, flac, wav, mov, mkv, webm)
-- more awesome features and ui changes because fuck yeah
+- nothing i think
 
 ## requirements
 
 - python 3.8+
 - yt-dlp
 - ffmpeg
+- pyinstaller (included. build.bat downloads it for you)
+- pycaw (included. build.bat downloads it for you)
+- comtypes (included. build.bat downloads it for you)
 - pillow (included. build.bat downloads it for you)
 - tkinter (comes with python)
 
