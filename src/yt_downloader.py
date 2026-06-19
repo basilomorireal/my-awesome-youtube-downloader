@@ -358,32 +358,25 @@ class App(tk.Tk):
 
     def _make_gif_btn(self, parent, key, gif_file, fallback_text, command, height=48):
         """
-        Uses a plain tk.Label (no Button) for the GIF — zero hover flash.
-        When disabled, a semi-transparent grey overlay label covers the GIF.
-        Falls back to a styled tk.Button when no GIF is present.
+        GIF label button — no hover flash, no overlay, GIF always visible.
+        Falls back to a tk.Button if no GIF file is present.
         """
         loaded = self._load_btn_gif(key, gif_file, target_h=height)
 
         wrapper = tk.Frame(parent, height=height + 10, bd=0, highlightthickness=0)
         wrapper.pack_propagate(False)
 
-        _bg = "#FFFFFF"
+        if key not in self._btn_gif:
+            self._btn_gif[key] = {}
+        d = self._btn_gif[key]
+        d["wrapper"] = wrapper
 
         if loaded:
-            d = self._btn_gif[key]
             lbl = tk.Label(wrapper, image=d["frames"][0],
-                           bd=0, highlightthickness=0, cursor="hand2", bg=_bg)
-            lbl.place(relx=0, rely=0, relwidth=1, relheight=1)
-            lbl.bind("<Button-1>", lambda e, k=key: self._gif_btn_click(k, command))
+                           bd=0, highlightthickness=0, cursor="hand2", bg="#FFFFFF")
+            lbl.pack(fill="both", expand=True)
+            lbl.bind("<Button-1>", lambda e: command())
             d["label"] = lbl
-            d["wrapper"] = wrapper
-            d["command"] = command
-            d["enabled"] = True
-            # Overlay label for disabled state (hidden by default)
-            overlay = tk.Label(wrapper, bg="#888888", bd=0, highlightthickness=0)
-            overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-            overlay.place_forget()
-            d["overlay"] = overlay
             self.after(100, self._start_btn_gif, key)
             btn = lbl
         else:
@@ -391,43 +384,19 @@ class App(tk.Tk):
                             bd=0, highlightthickness=0, command=command,
                             font=("Segoe UI", 11, "bold"),
                             fg="white", activeforeground="white",
-                            bg="#CC3300", activebackground="#AA2200")
+                            bg="#4F46E5", activebackground="#4338CA")
             btn.pack(fill="both", expand=True)
+            d["label"] = None
+            d["fallback_btn"] = btn
 
-        self._btn_gif.setdefault(key, {})["wrapper"] = wrapper
         return btn
 
     def _gif_btn_click(self, key, command):
-        d = self._btn_gif.get(key, {})
-        if d.get("enabled", True):
-            command()
+        command()
 
     def _set_gif_btn_state(self, key, enabled):
-        d = self._btn_gif.get(key)
-        if not d:
-            return
-        d["enabled"] = enabled
-        overlay = d.get("overlay")
-        lbl = d.get("label")
-        if overlay and lbl:
-            if enabled:
-                # Hide overlay, bring GIF label back to front
-                overlay.place_forget()
-                lbl.place(relx=0, rely=0, relwidth=1, relheight=1)
-                lbl.lift()
-                lbl.configure(cursor="hand2")
-            else:
-                # Show grey overlay on top of GIF label
-                overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-                overlay.lift()
-                lbl.configure(cursor="")
-        else:
-            # fallback text button
-            wrapper = d.get("wrapper")
-            if wrapper:
-                for w in wrapper.winfo_children():
-                    if isinstance(w, tk.Button):
-                        w.configure(state="normal" if enabled else "disabled")
+        # GIF stays visible and active always — no visual change on disable
+        pass
 
     # ── Single tab ────────────────────────────────────────────────────
 
